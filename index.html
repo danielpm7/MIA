@@ -5,94 +5,81 @@
   <title>ChatGPT Voz</title>
 </head>
 <body>
-  <h2>🎙️ Grabar Audio y Enviar a Make</h2>
   <button id="start">🎤 Iniciar Grabación</button>
   <button id="stop" disabled>⏹️ Detener Grabación</button>
   <p id="status"></p>
-
-  <h2>🔊 Respuesta hablada</h2>
-  <audio id="player" controls style="width:100%;"></audio>
+  <audio id="player" controls style="width:100%"></audio>
 
   <script>
-    let mediaRecorder;
-    let audioChunks = [];
-
-    const startBtn   = document.getElementById("start");
-    const stopBtn    = document.getElementById("stop");
-    const statusText = document.getElementById("status");
-    const player     = document.getElementById("player");
-
-    // ▶️ Tu URL de Custom Webhook en Make:
+    const startBtn  = document.getElementById("start");
+    const stopBtn   = document.getElementById("stop");
+    const statusTxt = document.getElementById("status");
+    const player    = document.getElementById("player");
     const webhookUrl = "https://hook.us2.make.com/1ukimadzz3lav967g37b7j46gvpry3al";
 
+    let mediaRecorder, audioChunks = [];
+
     startBtn.onclick = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
-        audioChunks = [];
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
 
-        mediaRecorder.ondataavailable = e => {
-          if (e.data && e.data.size > 0) audioChunks.push(e.data);
-        };
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
 
-        mediaRecorder.onstop = async () => {
-          statusText.textContent = "⏳ Enviando audio…";
-          try {
-            // 1. Empaqueta audio en FormData
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            const formData  = new FormData();
-            formData.append('file', audioBlob, 'audio.webm');
+      // Auto-stop tras 20s para no mandar clips gigantes
+      setTimeout(() => {
+        if (mediaRecorder.state === "recording") stopBtn.click();
+      }, 20000);
 
-            // 2. Envía al webhook
-            const response = await fetch(webhookUrl, {
-              method: 'POST',
-              body: formData
-            });
-            console.log('Fetch status:', response.status);
-
-            // 3. Clona y lee texto para debug
-            const clone = response.clone();
-            const text  = await response.text();
-            console.log('Fetch body text (debug):', text);
-
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}: ${text}`);
-            }
-
-            // 4. Lee el MP3 desde la copia
-            const mp3Blob = await clone.blob();
-            const audioUrl = URL.createObjectURL(mp3Blob);
-
-            // 5. Reproduce
-            player.src = audioUrl;
-            await player.play();
-            statusText.textContent = "✅ Respuesta recibida y reproducida.";
-          } catch (err) {
-            console.error('Error enviando o reproduciendo:', err);
-            statusText.textContent = `❌ ${err.message}`;
-          } finally {
-            startBtn.disabled = false;
-            stopBtn.disabled  = true;
-          }
-        };
-
-        // Comienza a grabar
-        mediaRecorder.start();
-        statusText.textContent = "🔴 Grabando…";
-        startBtn.disabled = true;
-        stopBtn.disabled  = false;
-      } catch (err) {
-        console.error("Error al acceder al micrófono:", err);
-        statusText.textContent = `❌ ${err.message}`;
-      }
+      mediaRecorder.start();
+      statusTxt.textContent = "🔴 Grabando…";
+      startBtn.disabled = true;
+      stopBtn.disabled  = false;
     };
 
-    stopBtn.onclick = () => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-        statusText.textContent = "⏹️ Procesando grabación...";
-        stopBtn.disabled = true;
-      }
+    stopBtn.onclick = async () => {
+      mediaRecorder.stop();
+      statusTxt.textContent = "⏳ Enviando audio…";
+      startBtn.disabled = true;
+      stopBtn.disabled  = true;
+
+      // Esperamos a que onstop se dispare
+      mediaRecorder.onstop = async () => {
+        try {
+          // 1) Usa el mimeType real
+          const mime = mediaRecorder.mimeType || "audio/webm";
+          const blob = new Blob(audioChunks, { type: mime });
+          // 2) Saca la extensión tras la '/'
+          const ext  = mime.split("/")[1].split(";")[0]; 
+          const name = `audio.${ext}`;
+
+          // 3) Empaqueta y envía
+          const form = new FormData();
+          form.append("file", blob, name);
+
+          const res = await fetch(webhookUrl, { method: "POST", body: form });
+
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+
+          // 4) Recibe el MP3 y lo reproduce
+          const mp3Blob = await res.blob();
+          const url     = URL.createObjectURL(mp3Blob);
+          player.src    = url;
+          await player.play();
+
+          statusTxt.textContent = "✅ ¡Reproduciendo respuesta!";
+        } catch (err) {
+          console.error(err);
+          statusTxt.textContent = `❌ ${err.message}`;
+        } finally {
+          startBtn.disabled = false;
+          stopBtn.disabled  = true;
+        }
+      };
     };
   </script>
 </body>
