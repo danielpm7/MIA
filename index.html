@@ -4,17 +4,19 @@
   <meta charset="UTF-8">
   <title>ChatGPT Voz</title>
   <style>
-    body { font-family: sans-serif; padding: 1rem; }
-    button { margin-right: 0.5rem; }
-    #status { margin-top: 1rem; }
+    body { font-family: sans-serif; padding: 1rem; max-width: 600px; margin: auto; }
+    button { margin-right: 0.5rem; padding: 0.5rem 1rem; font-size: 1rem; }
+    #status { margin-top: 1rem; font-weight: bold; }
     audio { margin-top: 1rem; width: 100%; }
   </style>
 </head>
 <body>
   <h2>🎙️ Grabar Audio y Respuesta por Voz</h2>
+
   <button id="start">🎤 Iniciar Grabación</button>
   <button id="stop" disabled>⏹️ Detener Grabación</button>
   <p id="status"></p>
+
   <audio id="player" controls></audio>
 
   <script>
@@ -22,6 +24,7 @@
     const stopBtn    = document.getElementById("stop");
     const statusText = document.getElementById("status");
     const player     = document.getElementById("player");
+    // Pon aquí tu webhook de Make:
     const webhookUrl = "https://hook.us2.make.com/1ukimadzz3lav967g37b7j46gvpry3al";
 
     let mediaRecorder, audioChunks = [];
@@ -43,41 +46,42 @@
       }
     };
 
-    stopBtn.onclick = async () => {
-      stopBtn.disabled  = true;
+    stopBtn.onclick = () => {
+      // Desactiva botones enseguida
+      stopBtn.disabled = true;
       statusText.textContent = "⏳ Procesando y enviando…";
 
       mediaRecorder.stop();
       mediaRecorder.onstop = async () => {
         try {
-          // 1) Construye el blob con el mimeType real
+          // 1) Empaqueta en FormData
           const mimeType = mediaRecorder.mimeType || "audio/webm";
           const blob     = new Blob(audioChunks, { type: mimeType });
           const ext      = mimeType.split("/")[1].split(";")[0];
-          const filename = `audio.${ext}`;
+          const form     = new FormData();
+          form.append("file", blob, `audio.${ext}`);
 
-          // 2) Envía al webhook
-          const form = new FormData();
-          form.append("file", blob, filename);
-
+          // 2) Envía al webhook de Make
           const res = await fetch(webhookUrl, { method: "POST", body: form });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          if (!res.ok) throw new Error(`Error HTTP ${res.status}`);
 
-          // 3) Recibe el MP3 y actualiza el reproductor
+          // 3) Recibe blob MP3 y monta URL
           const mp3Blob = await res.blob();
           const url     = URL.createObjectURL(mp3Blob);
           player.src    = url;
 
-          // 4) Intentar autoplay, o mostrar ▶️
+          // 4) Intenta reproducir automáticamente…
           try {
             await player.play();
             statusText.textContent = "✅ Reproduciendo respuesta…";
-          } catch (_) {
+          } catch (err) {
+            // Si falla autoplay (p.ej. Safari móvil), muestro mensaje amigable
             statusText.textContent = "✅ Audio listo. Pulsa ▶️ para escuchar.";
           }
         } catch (err) {
           statusText.textContent = `❌ ${err.message}`;
         } finally {
+          // Siempre reactivar el botón de grabar
           startBtn.disabled = false;
         }
       };
