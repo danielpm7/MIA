@@ -32,7 +32,7 @@
     startBtn.onclick = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
         audioChunks = [];
         mediaRecorder.ondataavailable = e => {
           if (e.data.size > 0) audioChunks.push(e.data);
@@ -56,7 +56,8 @@
         try {
           // 1) Empaqueta en FormData
           const mimeType = mediaRecorder.mimeType || "audio/webm";
-          const blob     = new Blob(audioChunks, { type: mimeType });
+          const blob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+          form.append("file", blob, "audio.webm");
           const ext      = mimeType.split("/")[1].split(";")[0];
           const form     = new FormData();
           form.append("file", blob, `audio.${ext}`);
