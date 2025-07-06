@@ -24,7 +24,7 @@
     const stopBtn    = document.getElementById("stop");
     const statusText = document.getElementById("status");
     const player     = document.getElementById("player");
-    // Pon aquí tu webhook de Make:
+    // Sustituye por tu webhook de Make:
     const webhookUrl = "https://hook.us2.make.com/1ukimadzz3lav967g37b7j46gvpry3al";
 
     let mediaRecorder, audioChunks = [];
@@ -32,11 +32,17 @@
     startBtn.onclick = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+        // Elegimos el mejor mimeType soportado
+        const preferred = 'audio/webm;codecs=opus';
+        const fallback  = 'audio/mp4';
+        const mimeType  = MediaRecorder.isTypeSupported(preferred) ? preferred : fallback;
+
+        mediaRecorder = new MediaRecorder(stream, { mimeType });
         audioChunks = [];
         mediaRecorder.ondataavailable = e => {
           if (e.data.size > 0) audioChunks.push(e.data);
         };
+
         mediaRecorder.start();
         statusText.textContent = "🔴 Grabando…";
         startBtn.disabled = true;
@@ -47,42 +53,39 @@
     };
 
     stopBtn.onclick = () => {
-      // Desactiva botones enseguida
       stopBtn.disabled = true;
       statusText.textContent = "⏳ Procesando y enviando…";
 
       mediaRecorder.stop();
       mediaRecorder.onstop = async () => {
         try {
-          // 1) Empaqueta en FormData
-          const mimeType = mediaRecorder.mimeType || "audio/webm";
-          const blob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
-          form.append("file", blob, "audio.webm");
-          const ext      = mimeType.split("/")[1].split(";")[0];
-          const form     = new FormData();
-          form.append("file", blob, `audio.${ext}`);
+          // Reconstruimos el mismo mimeType que usamos al grabar
+          const mimeType  = mediaRecorder.mimeType || audioChunks[0]?.type || 'audio/webm';
+          const ext       = mimeType.split('/')[1].split(';')[0]; // ej. 'webm' o 'mp4'
+          const blob      = new Blob(audioChunks, { type: mimeType });
+          const form      = new FormData();
 
-          // 2) Envía al webhook de Make
-          const res = await fetch(webhookUrl, { method: "POST", body: form });
+          form.append('file', blob, `audio.${ext}`);
+
+          // Envío a Make
+          const res = await fetch(webhookUrl, { method: 'POST', body: form });
           if (!res.ok) throw new Error(`Error HTTP ${res.status}`);
 
-          // 3) Recibe blob MP3 y monta URL
+          // Recibo MP3
           const mp3Blob = await res.blob();
           const url     = URL.createObjectURL(mp3Blob);
           player.src    = url;
 
-          // 4) Intenta reproducir automáticamente…
+          // Intento autoplay
           try {
             await player.play();
             statusText.textContent = "✅ Reproduciendo respuesta…";
-          } catch (err) {
-            // Si falla autoplay (p.ej. Safari móvil), muestro mensaje amigable
+          } catch {
             statusText.textContent = "✅ Audio listo. Pulsa ▶️ para escuchar.";
           }
         } catch (err) {
           statusText.textContent = `❌ ${err.message}`;
         } finally {
-          // Siempre reactivar el botón de grabar
           startBtn.disabled = false;
         }
       };
